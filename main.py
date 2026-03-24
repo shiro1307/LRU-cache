@@ -59,10 +59,15 @@ class LRUcache:
         self.hashmap = {}
         self.chain = LRUchain()
         self.capacity = 20
+
+        self.hits = 0
+        self.misses = 0
             
     def get(self,key):
         if key in self.hashmap:
             #CACHE HIT
+            
+            self.hits += 1
 
             node = self.hashmap[key]
 
@@ -74,6 +79,8 @@ class LRUcache:
 
         else:
             #CACHE MISS
+
+            self.misses += 1
 
             return None
 
@@ -100,8 +107,12 @@ class LRUcache:
                     del self.hashmap[lru.key]
 
             self.chain.addToFront(node)
+    
+    def stats(self):
+        return f'Hits: {self.hits}\nMisses: {self.misses}\nHit rate: {self.hits/(self.hits+self.misses) if self.hits+self.misses != 0 else "N/A"}'
 
 A = LRUcache()
 A.put('hi',1)
 A.put('bye',2)
 print(A.chain)
+print(A.stats())
