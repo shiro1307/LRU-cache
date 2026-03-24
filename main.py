@@ -76,79 +76,83 @@ class LRUcache:
         self.hits = 0
         self.misses = 0
     
-    def calcExpiry(self):
+    def _calc_expiry(self):
         return time.monotonic() + self.ttl if self.ttl is not None else None
 
+    def _remove_node(self,node):
+        self.chain.removeNode(node)
+        del self.hashmap[node.key]
+
+    def _remove_lru(self):
+        lru = self.chain.removeLRU()
+        if lru:
+            del self.hashmap[lru.key]
+            
+    def _create_node(self,key,val):
+        node = LRUnode(key,val)
+        node.expiry = self._calc_expiry()
+        return node
+    
+    def _insert_node(self,node):
+        self.chain.addToFront(node)
+        self.hashmap[node.key] = node
+
+    def _is_expired(self,node):
+        return self.chain.isExpired(node.expiry)
+    
+    def _cleanup_expired(self):
+        while self.chain.length > 0:
+            lru = self.chain.dEnd.prev
+            if not self.chain.isExpired(lru.expiry):
+                break
+            self._remove_lru()
+    
+    def _evict_if_needed(self):
+        if self.chain.length >= self.capacity:
+            self._remove_lru()
+
     def get(self,key):
-        if key in self.hashmap:
-            #CACHE KEY EXISTS, CHECK IF HAS EXPIRED OR NOT
-            #GET NODE 
-            node = self.hashmap[key]
-            if self.chain.isExpired(node.expiry):
-                #CACHE HAS EXPIRED, TREAT AS A CACHE MISS
-                #MISS COUNTER INCREMENT
-                self.misses += 1
-                #GET RID OF EXPIRED NODE IN LRU
-                self.chain.removeNode(node)
-                del self.hashmap[key]
-                return None
-            else:
-                #CACHE HASN'T EXPIRED YET, VALID CACHE HIT
-                #CACHE HIT COUNTER INCREMENT
-                self.hits += 1
-                #BRING NODE FORWARD IN LRU CHAIN
-                self.chain.bringForward(node)
-                return node.val
-        else:
-            #CACHE MISS
-            #MISS COUNTER INCREMENT
+        node = self.hashmap.get(key)
+
+        if not node:
             self.misses += 1
             return None
 
+        if self._is_expired(node):
+            self._remove_node(node)
+            self.misses += 1
+            return None
+        
+        self.hits += 1
+        self.chain.bringForward(node)
+        return node.val
+        
     def put(self,key,val):
 
         if self.capacity == 0:
             return
 
-        if key in self.hashmap:
-            #UPDATE AND BRING UP OLD CACHE
-            #GET OLD NODE AND UPDATE VAL
-            node = self.hashmap[key]
+        node = self.hashmap.get(key)
+
+        if node:
             node.val = val
-            node.expiry = self.calcExpiry()
-            #BRING OLD NODE FORWARD IN LRU CHAIN
+            node.expiry = self._calc_expiry()
             self.chain.bringForward(node)
-        else:
+            return
+        
+        node = self._create_node(key,val)
+        
+        if self.chain.length < self.capacity:
+            self._insert_node(node)
+            return
 
-            #ADD CACHE
-            #CREATE NODE AND ADD TO HASHMAP FOR O(1) LOOKUP
-            node = LRUnode(key,val)
-            node.expiry = self.calcExpiry()
-            
-            #SKIP THE LOOP AHEAD IF CAPACITY ISN'T EXCEEDED
-            if self.chain.length < self.capacity:
-                self.chain.addToFront(node)
-                self.hashmap[key] = node
-                return
-            
-            #GET RID OF END DEAD NODES
-            while self.chain.length > 0 and self.chain.isExpired(self.chain.dEnd.prev.expiry):
-                lru = self.chain.removeLRU()
-                if lru:
-                    del self.hashmap[lru.key]
-
-            #IF CACHE STILL EXCEEDS CAPACITY, GET RID OF LEAST RECENTLY USED CACHE NODE
-            if self.chain.length >= self.capacity:
-                lru = self.chain.removeLRU()
-                if lru:
-                    del self.hashmap[lru.key]
-
-            #ADD CREATED NODE TO THE FRONT OF LRU CHAIN
-            self.chain.addToFront(node)
-            self.hashmap[key] = node
+        self._cleanup_expired()
+        self._evict_if_needed()
+        self._insert_node(node)
     
     def stats(self):
-        return f'Hits: {self.hits}\nMisses: {self.misses}\nHit rate: {self.hits/(self.hits+self.misses) if self.hits+self.misses != 0 else "N/A"}'
+        rate = self.hits/(self.hits+self.misses) if self.hits+self.misses != 0 else 0.0
+        return f'Hits: {self.hits}\nMisses: {self.misses}\nHit rate: {rate:.2%}'
 
 A = LRUcache()
 A.put('hi',1)
