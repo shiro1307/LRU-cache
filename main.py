@@ -63,9 +63,14 @@ class LRUchain:
         return lru
     
     def bringForward(self,node):
-        if node.prev != self.dStart:
+        if node.prev != self.dStart and node != self.dStart.next:
             self.removeNode(node)
             self.addToFront(node)
+
+    def reset(self):
+        self.dStart.next = self.dEnd
+        self.dEnd.prev = self.dStart
+        self.length = 0
 
 class LRUcache:
     def __init__(self,capacity=20,ttl=120):
@@ -100,7 +105,7 @@ class LRUcache:
     def _is_expired(self,node):
         return self.chain.isExpired(node.expiry)
     
-    def _cleanup_expired(self):
+    def _cleanup_expired_back(self):
         while self.chain.length > 0:
             lru = self.chain.dEnd.prev
             if not self.chain.isExpired(lru.expiry):
@@ -146,13 +151,27 @@ class LRUcache:
             self._insert_node(node)
             return
 
-        self._cleanup_expired()
+        self._cleanup_expired_back()
         self._evict_if_needed()
         self._insert_node(node)
     
     def stats(self):
         rate = self.hits/(self.hits+self.misses) if self.hits+self.misses != 0 else 0.0
         return f'Hits: {self.hits}\nMisses: {self.misses}\nHit rate: {rate:.2%}'
+
+    def __len__(self):
+        return self.chain.length
+
+    def delete(self,key):
+        node = self.hashmap.get(key)
+        if node:
+            self._remove_node(node)
+    
+    def clear(self):
+        self.hashmap.clear()
+        self.chain.reset()
+        self.hits = 0
+        self.misses = 0
 
 A = LRUcache()
 A.put('hi',1)
